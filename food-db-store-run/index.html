@@ -245,10 +245,15 @@
   <div id="ux"></div>
 
   <div class="done">
+    <button class="primary hide" id="share">Share results</button>
     <button class="primary" id="copy">Copy results</button>
     <button class="ghost" id="reset">Reset sheet</button>
     <pre class="out hide" id="out"></pre>
   </div>
+  <p class="lede" style="font-size:.82rem;margin-top:.75rem">
+    Nothing here is sent anywhere — your taps live only on this phone. Share or copy the block
+    out before you clear your browser, or the run is gone.
+  </p>
 </div>
 
 <script>
@@ -385,7 +390,9 @@
       c.mfpAns ? `${c.mfpYes}/${c.mfpAns}` : "—";
   }
 
-  document.getElementById("copy").addEventListener("click", async () => {
+  // The report is the only way results leave this phone — nothing is posted anywhere.
+  // Built once here so Share and Copy can never disagree.
+  function report() {
     const c = counts();
     const rate = c.done ? Math.round((c.found / c.done) * 100) : 0;
     const lines = [
@@ -407,10 +414,20 @@
       "UX CHECKS",
       ...UX.map(([label], i) => `  ${label}: ${state["u" + i] || "—"}`),
     ];
-    const text = lines.join("\n");
+    return lines.join("\n");
+  }
+
+  // Always reveal the text too: whatever the clipboard or share sheet does, the block is
+  // on screen and selectable by hand. No silent failure.
+  function reveal(text) {
     const out = document.getElementById("out");
     out.textContent = text;
     out.classList.remove("hide");
+  }
+
+  document.getElementById("copy").addEventListener("click", async () => {
+    const text = report();
+    reveal(text);
     try {
       await navigator.clipboard.writeText(text);
       const b = document.getElementById("copy");
@@ -420,6 +437,27 @@
       document.getElementById("copy").textContent = "Select the text below to copy";
     }
   });
+
+  // Native share sheet (iOS: Messages / Mail / Notes / Slack). This is how the run gets off
+  // the phone and somewhere durable. Only shown where the API actually exists — no dead button.
+  const shareBtn = document.getElementById("share");
+  if (navigator.share) {
+    shareBtn.classList.remove("hide");
+    shareBtn.addEventListener("click", async () => {
+      const text = report();
+      reveal(text);
+      try {
+        // No await before this call — iOS drops the user-gesture context otherwise.
+        await navigator.share({ title: "Food-DB store run", text });
+      } catch (e) {
+        // AbortError = user dismissed the sheet. Not a failure, don't shout about it.
+        if (e && e.name !== "AbortError") {
+          shareBtn.textContent = "Share unavailable — copy instead";
+          setTimeout(() => (shareBtn.textContent = "Share results"), 2200);
+        }
+      }
+    });
+  }
 
   document.getElementById("reset").addEventListener("click", () => {
     state = {};
